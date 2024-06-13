@@ -1,228 +1,210 @@
 import numpy as np
+from numpy import inf
 import sympy as sp
-import time
 import matplotlib.pyplot as plt
+import pandas as pd
+import time
 
+# Ignore warnings
+import warnings
+warnings.filterwarnings("ignore")
 
-def graph_n_function(*functions, a: float, b: float) -> None:
-    # graph the function in the interval [a, b] with matplotlib
-    x = np.linspace(a, b, 100)
-    for f in functions:
-        y = sp.lambdify(x, f, "numpy")
-        plt.plot(x, y(x), label=f"f(x) = {f}")
-    plt.legend()
-    plt.show()
-    
-x = sp.symbols("x")    
-func1 = x
-func2 = x**2 + 6*x + 6
-graph_n_function(func1, func2, a=-10, b=10)
+x = sp.symbols("x")
 
-class NumericMethods:
-    def __init__(self, type_method: str, function) -> None:
-        """Constructor of the class NumericMethods
+class Function:
+    def __init__(self, function: sp.Expr, a=-np.inf, b=np.inf):
+        """Constructor of the class Function
 
         Args:
-            type_method (str): Type of method to use
-            function (callable): Function to evaluate
+            function (sp.Expr): Sympy expression representing the function
+            a (numeric, optional): initial point. Defaults to -np.inf.
+            b (numeric, optional): initial point. Defaults to np.inf.
         """
-        assert isinstance(type_method, str), "type_method must be a string"
-
-        self.type_method = type_method
         self.function = function
-        self.numerical_methods = {
-            "bisection": self.bisection,
-            "secant": self.secant,
-            "false_position": self.false_position,
-        }
-        self.time = 0
-        
+        self.a = a
+        self.b = b
 
-    def check_method(self):
-        if self.type_method not in self.numerical_methods:
-            raise ValueError(f"Method {self.type_method} not implemented")
-        else:
-            return self.numerical_methods[self.type_method]
+    @property
+    def function(self):
+        return self._function
 
-    def check_interval(self, a: float, b: float) -> bool:
-        """_summary_
+    @function.setter
+    def function(self, function):
+        assert isinstance(function, sp.Expr), "function must be a sympy expression"
+        self._function = function
+
+    @property
+    def a(self):
+        return self._a
+
+    @a.setter
+    def a(self, a):
+        assert isinstance(a, (int, float, np.float64)), "a must be a number"
+        self._a = a
+
+    @property
+    def b(self):
+        return self._b
+
+    @b.setter
+    def b(self, b):
+        assert isinstance(b, (int, float, np.float64)), "b must be a number"
+        self._b = b
+
+    def graph(self, num_points = 1000 ) -> None:
+        """ Plot the function in the interval [a, b]
 
         Args:
-            a (float): initial point
-            b (float): final point
+            num_points (int, optional): _description_. Defaults to 1000.
+        """
+        assert isinstance(num_points, int), "num_points must be an integer"
+        y = sp.lambdify(x, self.function, "numpy")
+        x_vals = np.linspace(self.a, self.b, num_points)
+        y_vals = y(x_vals)
+        plt.plot(x_vals, y_vals, label=f"f(x) = {self.function}")
+        plt.axvline(x=self.a, color='r', linestyle='--', label=f"x = {self.a}")
+        plt.axvline(x=self.b, color='r', linestyle='--', label=f"x = {self.b}")
+        plt.legend()
+        plt.show()
+
+    def __call__(self, x_val):
+        """ Evaluate the function at a given point
+
+        Args:
+            x_val (numeric): Point to evaluate the function 
 
         Returns:
-            bool: return True if the interval is in the domain of the function
+            numeric: Value of the function evaluated at x_val
         """
-        # Check if the interval is in the domain of the function
-        f_a = self.function.subs(x, a)
-        f_b = self.function.subs(x, b)
+        assert isinstance(x_val, (int, float, np.float64)), "x_val must be a number"
+        return self.function.subs(x, x_val)
 
-        # Check limits on the interval
-        limit_a_right = sp.limit(self.function, x, a, dir="+")
-        limit_a_left = sp.limit(self.function, x, a, dir="-")
-        limit_b_right = sp.limit(self.function, x, b, dir="+")
-        limit_b_left = sp.limit(self.function, x, b, dir="-")
+    def check_interval(self):
+        """ Check if the function is real and finite in the interval [a, b]
 
-        # Check if the function is continuous in the interval
-        is_continuous_a = f_a == limit_a_right == limit_a_left
-        is_continuous_b = f_b == limit_b_right == limit_b_left
+        Returns:
+            Bool: True if the function is real and finite in the interval [a, b]
+        """
+        # Check a dense set of points in the interval
+        test_points = np.linspace(self.a, self.b, 1000)
+        test_values = [self.function.subs(x, pt).evalf() for pt in test_points]
 
-        is_continuous = is_continuous_a and is_continuous_b
+        # Check if all evaluated points are real and finite
+        return all(v.is_real and v.is_finite for v in test_values)
 
-        # if all the conditions are met, return True
+    def check_continuity(self):
+        """ Check if the function is continuous in the interval [self.a, self.b]
+
+        Returns:
+            Bool: True if the function is continuous in the interval [self.a, self.b], False otherwise
+        """
+        # Definir una variable para el resultado
+        is_continuous = True
+        
+        # Intentar encontrar discontinuidades en la función
+        try:
+            singularities = sp.solveset(sp.diff(self.function, x), x, domain=sp.Interval(self.a, self.b))
+            # Si el conjunto de singularidades es vacío, no hay discontinuidades
+            is_continuous = singularities.is_EmptySet
+        except Exception as e:
+            # Si no se puede determinar (por ejemplo, si la derivada no se puede calcular), asumir que no es continua
+            is_continuous = False
+
         return is_continuous
 
-    def graph_function(self, a: float, b: float) -> None:
-        """_summary_
+    def __repr__(self):
+        return f"f(x) = {self.function}"
+    
+class NumericMethods(Function):
+    def __init__(self, function: sp.Expr, a=-np.inf, b=np.inf, tolerance=1e-6):
+        super().__init__(function, a, b)
+        self.tolerance = tolerance
+        self._dataTime = pd.DataFrame(columns=["Method", "Time", "Root", "Iterations", "Max_Iterations"]).copy()
+
+    def time_data(self):
+        return self._dataTime
+
+    def bisection(self, tol, max_iter: int):
+        """ Find the root of the function using the bisection method
 
         Args:
-            a (float): initial point
-            b (float): final point
-        """
-        # Graph the function in the interval
-        sp.plot(
-            self.function,
-            (x, a, b),
-            show=True,
-            title=f"f(x) = {self.function} in the interval [{a}, {b}]",
-        )
-
-    def bisection(self, a: float, b: float, tol: float, nmax: int) -> float:
-        """_summary_
-
-        Args:
-            a (float): initial point
-            b (float): final point
-            tol (float): _description_
-            nmax (int): _description_
-
-        Returns:
-            float: _description_
-        """
-
-        # Check if the interval is in the domain of the function
-        if not self.check_interval(a, b):
-            raise ValueError("Interval is not in the domain of the function")
-
-        # Start the timer
-        start_time = time.time()
-
-        fa = self.function.subs(x, a)
-        fb = self.function.subs(x, b)
-        if fa * fb > 0:
-            return None
-        for i in range(nmax):
-            p = (a + b) / 2
-            fp = self.function.subs(x, p)
-            if fp == 0 or (b - a) / 2 < tol:
-                self.time = time.time() - start_time
-                return p
-            if fa * fp > 0:
-                a = p
-                fa = fp
-            else:
-                b = p
-                fb = fp
-        self.time = time.time() - start_time
-
-        return None
-
-    def secant(self, x0: float, x1: float, tol: float, nmax: int) -> float:
-        """_summary_
+            tol (float): Tolerance for the root
+            max_iter (int): Maximum number of iterations
 
         Raises:
-            ValueError: _description_
+            ValueError: If the interval is not in the domain of the function
+            ValueError: If the function does not have roots in the interval (no sign change)
 
         Returns:
-            _type_: _description_
+            Tuple[float, float]: Root of the function and time to find it
         """
-
-        # Check if the interval is in the domain of the function
-        if not self.check_interval(x0, x1):
+        time_start = time.time()
+        
+        if not self.check_interval():
             raise ValueError("Interval is not in the domain of the function")
 
-        # Start the timer
-        start_time = time.time()
+        a, b = self.a, self.b
+        fa, fb = self(a), self(b)
 
-        f0 = self.function.subs(x, x0)
-        f1 = self.function.subs(x, x1)
+        if fa * fb >= 0:
+            raise ValueError("Function does not have roots in the interval (no sign change)")
 
-        for i in range(nmax):
-            x2 = x1 - f1 * (x1 - x0) / (f1 - f0)
-            f2 = self.function.subs(x, x2)
-            if abs(f2) < tol:
-                self.time = time.time() - start_time
-                return x2
-            x0, x1 = x1, x2
-            f0, f1 = f1, f2
-        self.time = time.time() - start_time
-        return None
-
-    def false_position(self, a: float, b: float, tol: float, nmax: int) -> float:
-        """_summary_
-
-        Args:
-            a (float): _description_
-            b (float): _description_
-            tol (float): _description_
-            nmax (int): _description_
-
-        Returns:
-            float: _description_
-        """
-
-        # Check if the interval is in the domain of the function
-        if not self.check_interval(a, b):
-            raise ValueError("Interval is not in the domain of the function")
-
-        # Start the timer
-        start_time = time.time()
-
-        fa = self.function.subs(x, a)
-        fb = self.function.subs(x, b)
-        if fa * fb > 0:
-            return None
-        for i in range(nmax):
-            p = a - fa * (b - a) / (fb - fa)
-            fp = self.function.subs(x, p)
-            if fp == 0 or abs(fp) < tol:
-                self.time = time.time() - start_time
-                return p
-            if fa * fp > 0:
-                a = p
-                fa = fp
-            else:
+        for i in range(max_iter):
+            p = (a + b) / 2
+            fp = self(p)
+            if abs(fp) < tol:
+                final_time = time.time() - time_start
+                self._dataTime = self._dataTime._append({"Method": "Bisection", "Time": final_time, "Root": p, "Iterations": i, "Max_Iterations": max_iter}, ignore_index=True)
+                return p , final_time
+            elif fa * fp < 0:
                 b = p
                 fb = fp
-        self.time = time.time() - start_time
-        return None
+            else:
+                a = p
+                fa = fp
+        final_time = time.time() - time_start
+        self._dataTime = self._dataTime._append({"Method": "Bisection", "Time": final_time, "Root": p, "Iterations": i, "Max_Iterations": max_iter}, ignore_index=True)
     
-    """ def newton_raphson(self,) """
+        return (a + b) / 2,  final_time
+    
+    def secant(self, tol, max_iter: int):
+        
+        time_start = time.time()
+        
+        if not self.check_interval():
+            raise ValueError("Interval is not in the domain of the function")
+        
+        if not self.check_continuity():
+            raise ValueError("Function is not continuous in the interval")
+        
+        x0, x1 = self.a, self.b
+        f0, f1 = self(x0), self(x1)
+        
+        if f0 * f1 >= 0:
+            raise ValueError("Function does not have roots in the interval (no sign change)")
+        
+        for i in range(max_iter):
+            p = (x0 + x1) / 2
+            fp = self(p)
+            if abs(fp) < tol:
+                final_time = time.time() - time_start
+                self._dataTime = self._dataTime._append({"Method": "Secant", "Time": final_time, "Root": p, "Iterations": i, "Max_Iterations": max_iter}, ignore_index=True)
+                return p, final_time
+            else:
+                x0, x1 = x1, p
+                f0, f1 = f1, fp
+        final_time = time.time() - time_start
+        self._dataTime = self._dataTime._append({"Method": "Secant", "Time": final_time, "Root": p, "Iterations": i, "Max_Iterations": max_iter}, ignore_index=True)
+        
+        return p, final_time
     
     
-    def __str__(self):
-        return f"NumericMethods({self.type_method}, {self.function})"
+    
+    
+f = x
+nm = NumericMethods(f, -0.1, 1)
+nm.graph()
+nm.bisection(1e-6, 1000)
+nm.secant(1e-6, 1000)
 
-    def __repr__(self):
-        return f"NumericMethods({self.type_method}, {self.function})"
-
-
-# Testeo
-
-""" x = sp.symbols("x")
-# Tan(x) - x
-f = sp.tan(x) - x
-nm = NumericMethods("bisection", f)
-result = nm.check_method()(0.5, 1, 1e-6, 100)
-print(nm.time)
-
-nm = NumericMethods("secant", f)
-result = nm.check_method()(0.5, 1, 1e-6, 100)
-print(nm.time)
-
-nm = NumericMethods("false_position", f)
-result = nm.check_method()(0.5, 1, 1e-6, 100)
-print(nm.time)
-
-nm.graph_function(0.5, 1) """
+print(nm.time_data())
