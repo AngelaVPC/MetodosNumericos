@@ -36,6 +36,7 @@ class NumericMethods:
             "false_position": self.false_position,
         }
         self.time = 0
+        
 
     def check_method(self):
         if self.type_method not in self.numerical_methods:
