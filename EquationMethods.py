@@ -2,6 +2,9 @@ import numpy as np
 import pandas as pd
 import time
 
+import matplotlib.pyplot as plt
+import seaborn as sns
+
 # Ignore warnings
 import warnings
 warnings.filterwarnings("ignore")
@@ -14,7 +17,7 @@ class EquationSystem:
         self.A = A
         self.b = b
         self.tolerance = tolerance
-        self._dataTime = pd.DataFrame(columns=["Method", "Time", "Answer", "Error"])
+        self._dataTime = pd.DataFrame(columns=["Method", "Time", "Answer", "Error", "Iterations"])
 
     @property
     def A(self):
@@ -66,6 +69,20 @@ class EquationSystem:
         del self.b
         del self.tolerance
         del self._dataTime
+        
+    def graph_time(self):
+        """Plot the time of execution for each method
+        """
+
+        sns.set_style("whitegrid")
+        plt.figure(figsize=(20, 6))
+        sns.barplot(y="Method", x="Time", data=self._dataTime, palette="viridis", orient="h", order=self._dataTime.sort_values("Time", ascending=False)["Method"])
+        plt.ylabel("Method")
+        plt.xlabel("Time (s)")
+        plt.title("Time of Execution for Different Methods")
+        plt.xticks(rotation=45)
+
+        plt.show()
     
     def check_symmetric(self): # Check if the matrix is symmetric A = A^T
         return np.allclose(self.A, self.A.T, atol=self.tolerance)
@@ -148,29 +165,46 @@ class EquationSystem:
         start_time = time.time()
         n = len(self.b)
         
-        # Augmented matrix
-        Ab = np.hstack([self.A, self.b.reshape(-1, 1)])
-        
         # Cholesky decomposition
-        L = np.zeros((n, n))
-        for i in range(n):
-            for j in range(i+1):
-                s = sum(L[i, k] * L[j, k] for k in range(j))
-                L[i, j] = np.sqrt(Ab[i, j] - s) if (i == j) else (1.0 / L[j, j] * (Ab[i, j] - s))
+        L = np.linalg.cholesky(self.A)
         
         # Forward substitution
         y = np.zeros(n)
         for i in range(n):
-            y[i] = (Ab[i, -1] - np.sum(L[i, j] * y[j] for j in range(i))) / L[i, i]
+            y[i] = (self.b[i] - np.sum(L[i, :i] * y[:i])) / L[i, i]
         
         # Back substitution
         x = np.zeros(n)
+        LT = L.T
         for i in range(n-1, -1, -1):
-            x[i] = (y[i] - np.sum(L[i, j] * x[j] for j in range(i+1, n))) / L[i, i]
+            x[i] = (y[i] - np.sum(LT[i, i+1:] * x[i+1:])) / LT[i, i]
         
         end_time = time.time() - start_time
         
         self._dataTime = self._dataTime._append({"Method": "Cholesky Decomposition", "Time": end_time, "Answer": x, "Error": np.linalg.norm(np.dot(self.A, x) - self.b)}, ignore_index=True)
+        return x
+    
+    def QR_decomposition(self):
+        assert self.check_square(), "Matrix is not square"
+        assert not self.check_singular(), "Matrix is singular"
+        
+        start_time = time.time()
+        n = len(self.b)
+        
+        # QR decomposition
+        Q, R = np.linalg.qr(self.A)
+        
+        # Solve for y
+        y = np.dot(Q.T, self.b)
+        
+        # Back substitution
+        x = np.zeros(n)
+        for i in range(n-1, -1, -1):
+            x[i] = (y[i] - np.sum(R[i, i+1:] * x[i+1:])) / R[i, i]
+        
+        end_time = time.time() - start_time
+        
+        self._dataTime = self._dataTime._append({"Method": "QR Decomposition", "Time": end_time, "Answer": x, "Error": np.linalg.norm(np.dot(self.A, x) - self.b)}, ignore_index=True)
         return x
     
     def svd_method(self):
@@ -196,14 +230,65 @@ class EquationSystem:
         
         self._dataTime = self._dataTime._append({"Method": "SVD", "Time": final_time, "Answer": x, "Error": np.linalg.norm(np.dot(self.A, x) - self.b)}, ignore_index=True)
         return x
+ 
+    # Iterative methods -------------------------------------------------------
+    def jacobi_method(self, max_iter: int):
+        assert self.check_square(), "Matrix is not square"
+        assert not self.check_singular(), "Matrix is singular"
+        
+        start_time = time.time()
+        n = len(self.b)
+        
+        # Initialize x
+        x = np.zeros(n)
+        
+        for _ in range(max_iter):
+            x_new = np.zeros(n)
+            for i in range(n):
+                x_new[i] = (self.b[i] - np.dot(self.A[i, :i], x[:i]) - np.dot(self.A[i, i+1:], x[i+1:])) / self.A[i, i]
+            if np.linalg.norm(x_new - x) < self.tolerance:
+                break
+            x = x_new
+        
+        end_time = time.time() - start_time
+        
+        self._dataTime = self._dataTime._append({"Method": "Jacobi", "Time": end_time, "Answer": x, "Error": np.linalg.norm(np.dot(self.A, x) - self.b)}, ignore_index=True)
+        return x
+    
+    def gauss_seidel_method(self, max_iter: int):
+        assert self.check_square(), "Matrix is not square"
+        assert not self.check_singular(), "Matrix is singular"
+        
+        start_time = time.time()
+        n = len(self.b)
+        
+        # Initialize x
+        x = np.zeros(n)
+        
+        for _ in range(max_iter):
+            x_old = np.copy(x)
+            for i in range(n):
+                x[i] = (self.b[i] - np.dot(self.A[i, :i], x[:i]) - np.dot(self.A[i, i+1:], x[i+1:])) / self.A[i, i]
+            if np.linalg.norm(x - x_old) < self.tolerance:
+                break
+        
+        end_time = time.time() - start_time
+        
+        self._dataTime = self._dataTime._append({"Method": "Gauss Seidel", "Time": end_time, "Answer": x, "Error": np.linalg.norm(np.dot(self.A, x) - self.b)}, ignore_index=True)
+        return x
     
     
 # Test
-A = np.array([[1, 2], [2, 1]], dtype=float)
-b = np.array([5, 6], dtype=float)
+A = np.array([[4, 1, 1], [1, 3 ,0], [1, 0, 2]], dtype=float)
+b = np.array([6, 5, 3], dtype=float)
 eq = EquationSystem(A, b)
-eq.svd_method()
-eq.gauss_elimination()
-eq.lu_decomposition()
-#eq.cholesky_decomposition()
+print(eq.svd_method())
+print(eq.gauss_elimination())
+print(eq.lu_decomposition())
+print(eq.QR_decomposition())
+print(eq.cholesky_decomposition())
+print(eq.jacobi_method(100))
+print(eq.gauss_seidel_method(100))
 print(eq._dataTime)
+
+eq.graph_time()
