@@ -12,7 +12,7 @@ warnings.filterwarnings("ignore")
 x = sp.symbols("x")
 
 class Function:
-    def __init__(self, function: sp.Expr, a=-np.inf, b=np.inf):
+    def __init__(self, function: sp.Expr, a=-np.inf, b=np.inf) -> None:
         """Constructor of the class Function
 
         Args:
@@ -76,7 +76,7 @@ class Function:
         Returns:
             numeric: Value of the function evaluated at x_val
         """
-        assert isinstance(x_val, (int, float, np.float64)), "x_val must be a number"
+        #assert isinstance(x_val, (int, float, np.float64)), "x_val must be a number"
         return self.function.subs(x, x_val)
 
     def check_interval(self):
@@ -123,6 +123,39 @@ class NumericMethods(Function):
 
     def time_data(self):
         return self._dataTime
+    
+    def fixed_point(self, tol, max_iter: int):
+        """ Find the root of the function using the fixed point method
+
+        Args:
+            tol (float): Tolerance for the root
+            max_iter (int): Maximum number of iterations
+
+        Raises:
+            ValueError: If the interval is not in the domain of the function
+
+        Returns:
+            Tuple[float, float]: Root of the function and time to find it
+        """
+        time_start = time.time()
+        
+        if not self.check_interval():
+            raise ValueError("Interval is not in the domain of the function")
+        
+        g = x + self.function
+        x0 = (self.a + self.b) / 2
+        
+        for i in range(max_iter):
+            x1 = g.subs(x, x0)
+            if abs(x1 - x0) < tol:
+                final_time = time.time() - time_start
+                self._dataTime = self._dataTime._append({"Method": "Fixed Point", "Time": final_time, "Root": x1, "Iterations": i, "Max_Iterations": max_iter}, ignore_index=True)
+                return x1, final_time
+            x0 = x1
+        final_time = time.time() - time_start
+        self._dataTime = self._dataTime._append({"Method": "Fixed Point", "Time": final_time, "Root": x1, "Iterations": i, "Max_Iterations": max_iter}, ignore_index=True)
+        
+        return x1, final_time
 
     def bisection(self, tol, max_iter: int):
         """ Find the root of the function using the bisection method
@@ -198,13 +231,39 @@ class NumericMethods(Function):
         
         return p, final_time
     
+    def newton_raphson(self, tol, max_iter: int):
+        
+        time_start = time.time()
+        
+        if not self.check_interval():
+            raise ValueError("Interval is not in the domain of the function")
+        
+        if not self.check_continuity():
+            raise ValueError("Function is not continuous in the interval")
+        
+        x0 = self.a
+        f0 = self(x0)
+        df = sp.diff(self.function, x)
+        
+        for i in range(max_iter):
+            x1 = x0 - f0 / df.subs(x, x0)
+            f1 = self(x1)
+            if abs(f1) < tol:
+                final_time = time.time() - time_start
+                self._dataTime = self._dataTime._append({"Method": "Newton-Raphson", "Time": final_time, "Root": x1, "Iterations": i, "Max_Iterations": max_iter}, ignore_index=True)
+                return x1, final_time
+            else:
+                x0, f0 = x1, f1
+        final_time = time.time() - time_start
+        self._dataTime = self._dataTime._append({"Method": "Newton-Raphson", "Time": final_time, "Root": x1, "Iterations": i, "Max_Iterations": max_iter}, ignore_index=True)
+        
+        return x1, final_time
     
-    
-    
-f = x
-nm = NumericMethods(f, -0.1, 1)
+#f = sp.exp(-2*x) - 2*x + 1
+f = x**3 -x - 1
+nm = NumericMethods(f, 1, 2)
 nm.graph()
-nm.bisection(1e-6, 1000)
-nm.secant(1e-6, 1000)
+nm.fixed_point(1e-4, 100)
+
 
 print(nm.time_data())
