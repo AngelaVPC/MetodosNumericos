@@ -83,6 +83,9 @@ class EquationSystem:
         plt.xticks(rotation=45)
 
         plt.show()
+        
+    def graph_solutions(self):
+        pass
     
     def check_symmetric(self): # Check if the matrix is symmetric A = A^T
         return np.allclose(self.A, self.A.T, atol=self.tolerance)
@@ -241,6 +244,7 @@ class EquationSystem:
         
         # Initialize x
         x = np.zeros(n)
+        iterations = 0
         
         for _ in range(max_iter):
             x_new = np.zeros(n)
@@ -249,12 +253,13 @@ class EquationSystem:
             if np.linalg.norm(x_new - x) < self.tolerance:
                 break
             x = x_new
+            iterations += 1
         
         end_time = time.time() - start_time
         
-        self._dataTime = self._dataTime._append({"Method": "Jacobi", "Time": end_time, "Answer": x, "Error": np.linalg.norm(np.dot(self.A, x) - self.b)}, ignore_index=True)
+        self._dataTime = self._dataTime._append({"Method": "Jacobi", "Time": end_time, "Answer": x, "Error": np.linalg.norm(np.dot(self.A, x) - self.b), "Iterations": iterations}, ignore_index=True)
         return x
-    
+
     def gauss_seidel_method(self, max_iter: int):
         assert self.check_square(), "Matrix is not square"
         assert not self.check_singular(), "Matrix is singular"
@@ -264,6 +269,7 @@ class EquationSystem:
         
         # Initialize x
         x = np.zeros(n)
+        iterations = 0
         
         for _ in range(max_iter):
             x_old = np.copy(x)
@@ -271,11 +277,13 @@ class EquationSystem:
                 x[i] = (self.b[i] - np.dot(self.A[i, :i], x[:i]) - np.dot(self.A[i, i+1:], x[i+1:])) / self.A[i, i]
             if np.linalg.norm(x - x_old) < self.tolerance:
                 break
+            iterations += 1
         
         end_time = time.time() - start_time
         
-        self._dataTime = self._dataTime._append({"Method": "Gauss Seidel", "Time": end_time, "Answer": x, "Error": np.linalg.norm(np.dot(self.A, x) - self.b)}, ignore_index=True)
+        self._dataTime = self._dataTime._append({"Method": "Gauss Seidel", "Time": end_time, "Answer": x, "Error": np.linalg.norm(np.dot(self.A, x) - self.b), "Iterations": iterations}, ignore_index=True)
         return x
+
     
     
 # Test
@@ -290,5 +298,6 @@ print(eq.cholesky_decomposition())
 print(eq.jacobi_method(100))
 print(eq.gauss_seidel_method(100))
 print(eq._dataTime)
+eq.graph_solutions()
 
 eq.graph_time()

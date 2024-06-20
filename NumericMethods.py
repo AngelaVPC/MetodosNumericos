@@ -2,6 +2,7 @@ import numpy as np
 from numpy import inf
 import sympy as sp
 import matplotlib.pyplot as plt
+import seaborn as sns
 import pandas as pd
 import time
 
@@ -9,17 +10,10 @@ import time
 import warnings
 warnings.filterwarnings("ignore")
 
-x = sp.symbols("x")
+x, y = sp.symbols("x y")
 
 class Function:
     def __init__(self, function: sp.Expr, a=-np.inf, b=np.inf) -> None:
-        """Constructor of the class Function
-
-        Args:
-            function (sp.Expr): Sympy expression representing the function
-            a (numeric, optional): initial point. Defaults to -np.inf.
-            b (numeric, optional): initial point. Defaults to np.inf.
-        """
         self.function = function
         self.a = a
         self.b = b
@@ -52,15 +46,10 @@ class Function:
         self._b = b
 
     def graph(self, num_points = 1000 ) -> None:
-        """ Plot the function in the interval [a, b]
-
-        Args:
-            num_points (int, optional): _description_. Defaults to 1000.
-        """
         assert isinstance(num_points, int), "num_points must be an integer"
-        y = sp.lambdify(x, self.function, "numpy")
+        y_func = sp.lambdify(x, self.function, "numpy")
         x_vals = np.linspace(self.a, self.b, num_points)
-        y_vals = y(x_vals)
+        y_vals = y_func(x_vals)
         plt.plot(x_vals, y_vals, label=f"f(x) = {self.function}")
         plt.axvline(x=self.a, color='r', linestyle='--', label=f"x = {self.a}")
         plt.axvline(x=self.b, color='r', linestyle='--', label=f"x = {self.b}")
@@ -68,48 +57,26 @@ class Function:
         plt.show()
 
     def __call__(self, x_val):
-        """ Evaluate the function at a given point
-
-        Args:
-            x_val (numeric): Point to evaluate the function 
-
-        Returns:
-            numeric: Value of the function evaluated at x_val
-        """
-        #assert isinstance(x_val, (int, float, np.float64)), "x_val must be a number"
-        return self.function.subs(x, x_val)
+        if isinstance(x_val, (int, float, np.float64)):
+            return self.function.subs(x, x_val).evalf()
+        elif isinstance(x_val, tuple):
+            return self.function.subs({x: x_val[0], y: x_val[1]}).evalf()
+        else:
+            raise ValueError("x_val must be a number or a tuple")
 
     def check_interval(self):
-        """ Check if the function is real and finite in the interval [a, b]
-
-        Returns:
-            Bool: True if the function is real and finite in the interval [a, b]
-        """
-        # Check a dense set of points in the interval
+        
         test_points = np.linspace(self.a, self.b, 1000)
         test_values = [self.function.subs(x, pt).evalf() for pt in test_points]
-
-        # Check if all evaluated points are real and finite
         return all(v.is_real and v.is_finite for v in test_values)
 
     def check_continuity(self):
-        """ Check if the function is continuous in the interval [self.a, self.b]
-
-        Returns:
-            Bool: True if the function is continuous in the interval [self.a, self.b], False otherwise
-        """
-        # Definir una variable para el resultado
         is_continuous = True
-        
-        # Intentar encontrar discontinuidades en la función
         try:
             singularities = sp.solveset(sp.diff(self.function, x), x, domain=sp.Interval(self.a, self.b))
-            # Si el conjunto de singularidades es vacío, no hay discontinuidades
             is_continuous = singularities.is_EmptySet
         except Exception as e:
-            # Si no se puede determinar (por ejemplo, si la derivada no se puede calcular), asumir que no es continua
             is_continuous = False
-
         return is_continuous
 
     def __repr__(self):
@@ -142,7 +109,7 @@ class NumericMethods(Function):
         if not self.check_interval():
             raise ValueError("Interval is not in the domain of the function")
         
-        g = x + self.function
+        g = x - self.function
         x0 = (self.a + self.b) / 2
         
         for i in range(max_iter):
@@ -151,11 +118,13 @@ class NumericMethods(Function):
                 final_time = time.time() - time_start
                 self._dataTime = self._dataTime._append({"Method": "Fixed Point", "Time": final_time, "Root": x1, "Iterations": i, "Max_Iterations": max_iter}, ignore_index=True)
                 return x1, final_time
-            x0 = x1
+            else:
+                x0 = x1
         final_time = time.time() - time_start
         self._dataTime = self._dataTime._append({"Method": "Fixed Point", "Time": final_time, "Root": x1, "Iterations": i, "Max_Iterations": max_iter}, ignore_index=True)
         
         return x1, final_time
+    
 
     def bisection(self, tol, max_iter: int):
         """ Find the root of the function using the bisection method
@@ -259,11 +228,99 @@ class NumericMethods(Function):
         
         return x1, final_time
     
-#f = sp.exp(-2*x) - 2*x + 1
-f = x**3 -x - 1
-nm = NumericMethods(f, 1, 2)
-nm.graph()
-nm.fixed_point(1e-4, 100)
+class OptimizationMethods(Function):
+    def __init__(self, function: sp.Expr, a=-np.inf, b=np.inf) -> None:
+        super().__init__(function, a, b)
+        self._dataTime = pd.DataFrame(columns=["Method", "Time", "Root", "Iterations", "Max_Iterations"]).copy()
+        
+    def time_data(self):
+        return self._dataTime
+    
+    def graph_time_data(self):
+        sns.set_style("whitegrid")
+        plt.figure(figsize=(20, 6))
+        sns.barplot(y="Method", x="Time", data=self._dataTime, palette="viridis", orient="h", order=self._dataTime.sort_values("Time", ascending=False).Method.unique())
+        plt.title("Time comparison between methods")
+        plt.ylabel("Method")
+        plt.xlabel("Time")
+        plt.plot()
+        
+    def graph(self, num_points=1000) -> None:
+        assert isinstance(num_points, int), "num_points must be an integer"
+        f_lambdified = sp.lambdify((x, y), self.function, "numpy")
+        x_vals = np.linspace(self.a, self.b, num_points)
+        y_vals = np.linspace(self.a, self.b, num_points)
+        X, Y = np.meshgrid(x_vals, y_vals)
+        Z = f_lambdified(X, Y)
 
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        ax.plot_surface(X, Y, Z, cmap='viridis')
+        ax.contour(X, Y, Z, levels=10, cmap='coolwarm')
 
-print(nm.time_data())
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.set_title(f"f(x, y) = {self.function}")
+
+        plt.show()
+        
+    def gradientDescentMethod(self, tol, max_iter: int, step_size=0.01):
+        time_start = time.time()
+        
+        if not self.check_interval():
+            raise ValueError("Interval is not in the domain of the function")
+        
+        if not self.check_continuity():
+            raise ValueError("Function is not continuous in the interval")
+        
+        grad = sp.Matrix([sp.diff(self.function, x), sp.diff(self.function, y)])
+        x0 = np.array([self.a, self.b], dtype=float)
+        points = [x0]
+
+        for i in range(max_iter):
+            gradient_evaluated = np.array(grad.subs({x: x0[0], y: x0[1]})).astype(np.float64).flatten()
+            x1 = x0 - step_size * gradient_evaluated
+            points.append(x1)
+            if np.linalg.norm(x1 - x0) < tol:
+                final_time = time.time() - time_start
+                self._dataTime = self._dataTime.append({"Method": "Gradient Descent", "Time": final_time, "Root": x1, "Iterations": i, "Max_Iterations": max_iter}, ignore_index=True)
+                self.graph_gradient_path(points)
+                return x1, final_time
+            else:
+                x0 = x1
+        final_time = time.time() - time_start
+        self._dataTime = self._dataTime.append({"Method": "Gradient Descent", "Time": final_time, "Root": x1, "Iterations": max_iter, "Max_Iterations": max_iter}, ignore_index=True)
+        self.graph_gradient_path(points)
+        return x1, final_time
+
+    def graph_gradient_path(self, points):
+        f_lambdified = sp.lambdify((x, y), self.function, "numpy")
+        x_vals = np.linspace(self.a, self.b, 100)
+        y_vals = np.linspace(self.a, self.b, 100)
+        X, Y = np.meshgrid(x_vals, y_vals)
+        Z = f_lambdified(X, Y)
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        ax.plot_surface(X, Y, Z, cmap='viridis', alpha=0.6)
+        points = np.array(points)
+        ax.plot(points[:, 0], points[:, 1], f_lambdified(points[:, 0], points[:, 1]), 'ro-')
+
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.set_title(f"Gradient Descent Path for f(x, y) = {self.function}")
+
+        plt.show()
+
+# Test Optimization Methods
+f = (x**2 + 3*y**2)*sp.exp(-x**2 - y**2)
+f = OptimizationMethods(f, a=-2, b=2)
+
+expr = (sp.sin(x)*sp.sin(y))/x*y
+f2 = OptimizationMethods(expr, a=-2, b=2)
+
+f.graph()
+print(f.gradientDescentMethod(1e-6, 1000, step_size=0.01))
+f.graph_gradient_path(f)
